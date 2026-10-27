@@ -116,9 +116,44 @@
     .sidebar.open { transform: translateX(0); }
     .toolbar input.doc-title { width: 140px; }
   }
+
+  /* 自定义弹窗：替代原生 prompt/confirm，避免移动端显示网址 */
+  .modal-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none;
+    align-items: center; justify-content: center; z-index: 9999;
+  }
+  .modal-box {
+    width: 320px; max-width: 86vw; background: #fff; border-radius: 14px;
+    padding: 20px; box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  }
+  .modal-title { font-size: 15px; font-weight: 700; color: #1f2b3a; margin-bottom: 12px; }
+  .modal-input {
+    width: 100%; padding: 10px 12px; border: 1px solid #d6dae0; border-radius: 8px;
+    font-size: 14px; outline: none; box-sizing: border-box;
+  }
+  .modal-input:focus { border-color: #2b6fff; }
+  .modal-msg { font-size: 14px; color: #445; line-height: 1.6; }
+  .modal-actions { margin-top: 18px; display: flex; justify-content: flex-end; gap: 10px; }
+  .modal-actions button {
+    border: none; border-radius: 8px; padding: 8px 16px; font-size: 14px; cursor: pointer;
+  }
+  .modal-actions .m-cancel { background: #eef0f3; color: #445; }
+  .modal-actions .m-ok { background: #2b6fff; color: #fff; }
 </style>
 </head>
 <body>
+<div class="modal-mask" id="modalMask">
+  <div class="modal-box">
+    <div class="modal-title" id="modalTitle"></div>
+    <input class="modal-input" id="modalInput" type="text" style="display:none">
+    <div class="modal-msg" id="modalMsg" style="display:none"></div>
+    <div class="modal-actions">
+      <button class="m-cancel" id="modalCancel">取消</button>
+      <button class="m-ok" id="modalOk">确定</button>
+    </div>
+  </div>
+</div>
+
   <div class="topbar">
     <button class="menu-btn" id="menuBtn">☰</button>
     <span class="title">我的知识库</span>
@@ -218,7 +253,7 @@ function render() {
     d.innerHTML = `<span class="arrow" title="折叠/展开">${isCol ? '▸' : '▾'}</span><span class="name">📁 ${escapeHtml(dir.name)}</span><span class="del" title="删除目录">✕</span>`;
     d.querySelector('.arrow').onclick = (e) => { e.stopPropagation(); collapsed[dir.id] = !collapsed[dir.id]; render(); };
     d.querySelector('.name').onclick = () => { activeDir = dir.id; activeNote = dir.notes[0] ? dir.notes[0].id : null; collapsed[dir.id] = false; render(); };
-    d.querySelector('.del').onclick = (e) => { e.stopPropagation(); if (confirm('删除目录「' + dir.name + '」及其笔记？')) { data.dirs = data.dirs.filter(x => x.id !== dir.id); if (activeDir === dir.id) { activeDir = null; activeNote = null; } save(); render(); } };
+    d.querySelector('.del').onclick = async (e) => { e.stopPropagation(); if (await askConfirm('删除目录「' + dir.name + '」及其笔记？')) { data.dirs = data.dirs.filter(x => x.id !== dir.id); if (activeDir === dir.id) { activeDir = null; activeNote = null; } save(); render(); } };
     list.appendChild(d);
 
     const notes = document.createElement('div');
@@ -233,7 +268,7 @@ function render() {
         if (searchTerm) { searchTerm = ''; document.getElementById('searchBox').value = ''; }
         render();
       };
-      n.querySelector('.del').onclick = (e) => { e.stopPropagation(); if (confirm('删除该笔记？')) { dir.notes = dir.notes.filter(x => x.id !== note.id); if (activeNote === note.id) activeNote = dir.notes[0] ? dir.notes[0].id : null; save(); render(); } };
+      n.querySelector('.del').onclick = async (e) => { e.stopPropagation(); if (await askConfirm('删除该笔记？')) { dir.notes = dir.notes.filter(x => x.id !== note.id); if (activeNote === note.id) activeNote = dir.notes[0] ? dir.notes[0].id : null; save(); render(); } };
       notes.appendChild(n);
     });
     if (!searchTerm) {
@@ -298,21 +333,58 @@ function currentNote() {
 }
 
 // 顶部格式按钮
+
+// 自定义弹窗，替代原生 prompt/confirm（避免移动端显示网址来源）
+function showModal({ title, message = '', value = '', placeholder = '', confirmText = '确定', showInput = true }) {
+  return new Promise(resolve => {
+    const mask = document.getElementById('modalMask');
+    document.getElementById('modalTitle').textContent = title;
+    const input = document.getElementById('modalInput');
+    const msg = document.getElementById('modalMsg');
+    if (showInput) {
+      input.style.display = ''; input.value = value; input.placeholder = placeholder;
+      msg.style.display = 'none';
+    } else {
+      input.style.display = 'none';
+      msg.style.display = ''; msg.textContent = message;
+    }
+    document.getElementById('modalOk').textContent = confirmText;
+    mask.style.display = 'flex';
+    if (showInput) setTimeout(() => input.focus(), 30);
+    const done = (res) => {
+      mask.style.display = 'none';
+      document.getElementById('modalOk').onclick = null;
+      document.getElementById('modalCancel').onclick = null;
+      resolve(res);
+    };
+    document.getElementById('modalOk').onclick = () => {
+      if (showInput) { done(input.value.trim()); } else { done(true); }
+    };
+    document.getElementById('modalCancel').onclick = () => {
+      if (showInput) { done(null); } else { done(false); }
+    };
+  });
+}
+function askText(title, def = '') { return showModal({ title, value: def, placeholder: def, showInput: true }); }
+function askConfirm(title) { return showModal({ title, showInput: false, message: title, confirmText: '删除' }); }
+
 function fmt(cmd, val) {
   document.getElementById('editor').focus();
   document.execCommand(cmd, false, val || null);
   const note = currentNote(); if (note) { note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save(); }
 }
-function insertLink() {
-  const url = prompt('输入链接地址：', 'https://');
+async function insertLink() {
+  const url = await askText('输入链接地址', 'https://');
   if (!url) return;
   document.getElementById('editor').focus();
   document.execCommand('createLink', false, url);
   const note = currentNote(); if (note) { note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save(); }
 }
-function insertTable() {
-  const r = parseInt(prompt('行数（含表头）：', '3')) || 3;
-  const c = parseInt(prompt('列数：', '3')) || 3;
+async function insertTable() {
+  const rs = await askText('行数（含表头）', '3'); if (rs === null) return;
+  const r = parseInt(rs) || 3;
+  const cs = await askText('列数', '3'); if (cs === null) return;
+  const c = parseInt(cs) || 3;
   let html = '<table><thead>';
   for (let j = 0; j < c; j++) html += '<th>表头</th>';
   html += '</thead><tbody>';
@@ -324,8 +396,8 @@ function insertTable() {
 }
 
 // 新增目录
-document.getElementById('addDirBtn').onclick = () => {
-  const name = prompt('目录名称：', '新目录');
+document.getElementById('addDirBtn').onclick = async () => {
+  const name = await askText('目录名称', '新目录');
   if (!name) return;
   const dir = { id: uid(), name, notes: [] };
   data.dirs.push(dir); activeDir = dir.id; activeNote = null; save(); render();

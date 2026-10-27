@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>我的知识库 · 编辑器</title>
+  <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%232b6fff'/><text x='32' y='43' font-size='30' text-anchor='middle' fill='white' font-family='sans-serif'>库</text></svg>">
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    color: #222; background: #f4f5f7; display: flex; flex-direction: column;
+  }
+  /* 顶栏 */
+  .topbar {
+    height: 48px; flex: 0 0 48px; background: #2b6fff; color: #fff;
+    display: flex; align-items: center; padding: 0 14px; gap: 12px;
+  }
+  .topbar .title { font-weight: 700; font-size: 15px; }
+  .topbar .spacer { flex: 1; }
+  .topbar button {
+    background: rgba(255,255,255,.18); color: #fff; border: none; border-radius: 6px;
+    padding: 6px 12px; font-size: 13px; cursor: pointer;
+  }
+  .topbar button:hover { background: rgba(255,255,255,.32); }
+  .topbar input.search {
+    background: rgba(255,255,255,.18); border: none; color: #fff; padding: 6px 10px;
+    border-radius: 6px; font-size: 13px; width: 200px; outline: none;
+  }
+  .topbar input.search::placeholder { color: rgba(255,255,255,.7); }
+  .menu-btn { display: none; }
+
+  .body { flex: 1; display: flex; min-height: 0; }
+
+  /* 左侧目录 */
+  .sidebar {
+    width: 240px; flex: 0 0 240px; background: #fff; border-right: 1px solid #e6e8eb;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .side-head {
+    padding: 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #eee;
+  }
+  .side-head .add-dir {
+    flex: 1; background: #2b6fff; color: #fff; border: none; border-radius: 6px;
+    padding: 8px; font-size: 13px; cursor: pointer;
+  }
+  .side-head .add-dir:hover { background: #1f5be0; }
+  .dir-list { flex: 1; overflow: auto; padding: 6px 0; }
+  .dir {
+    padding: 8px 12px; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 6px;
+  }
+  .dir:hover { background: #f0f4ff; }
+  .dir.active { background: #e6efff; color: #1f5be0; font-weight: 600; }
+  .dir .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dir .arrow { width: 16px; text-align: center; color: #999; cursor: pointer; font-size: 11px; user-select: none; }
+  .dir .arrow:hover { color: #1f5be0; }
+  .dir .del { color: #bbb; font-size: 12px; }
+  .dir .del:hover { color: #e44; }
+  .notes { padding: 0 0 4px 18px; }
+  .note {
+    padding: 6px 12px; font-size: 13px; color: #555; cursor: pointer; border-radius: 4px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .note:hover { background: #f4f6fa; }
+  .note.active { background: #e6efff; color: #1f5be0; }
+  .note .del { color: #ccc; font-size: 11px; margin-left: auto; }
+  .note .del:hover { color: #e44; }
+  .add-note {
+    margin: 2px 12px 6px 18px; font-size: 12px; color: #2b6fff; cursor: pointer;
+  }
+  .add-note:hover { text-decoration: underline; }
+
+  /* 主区 */
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #f4f5f7; }
+  .toolbar {
+    flex: 0 0 auto; background: #fff; border-bottom: 1px solid #e6e8eb; padding: 8px 12px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  }
+  .toolbar input.doc-title {
+    border: none; font-size: 16px; font-weight: 600; outline: none; width: 220px;
+    padding: 4px 6px; border-radius: 4px;
+  }
+  .toolbar input.doc-title:focus { background: #f4f6fa; }
+  .toolbar .sep { width: 1px; height: 22px; background: #e0e0e0; margin: 0 4px; }
+  .toolbar button {
+    border: 1px solid #e0e0e0; background: #fff; border-radius: 6px; padding: 5px 9px;
+    font-size: 13px; cursor: pointer; min-width: 30px;
+  }
+  .toolbar button:hover { background: #f0f4ff; border-color: #bcd0ff; }
+  .toolbar .save-state { margin-left: auto; font-size: 12px; color: #9aa0ad; }
+  .editor-wrap { flex: 1; overflow: auto; padding: 22px; }
+  .editor {
+    background: #fff; max-width: 820px; margin: 0 auto; min-height: 100%;
+    border: 1px solid #e6e8eb; border-radius: 10px; padding: 28px 34px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.04); outline: none; line-height: 1.8; font-size: 15px;
+  }
+  .editor:focus { border-color: #bcd0ff; }
+  .editor h1 { font-size: 24px; border-bottom: 2px solid #eee; padding-bottom: 8px; }
+  .editor h2 { font-size: 20px; }
+  .editor table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  .editor th, .editor td { border: 1px solid #d0d0d0; padding: 7px 11px; text-align: left; }
+  .editor th { background: #f3f6ff; }
+  .editor blockquote { border-left: 4px solid #2b6fff; background: #f4f8ff; margin: 12px 0; padding: 8px 14px; color: #444; }
+  .editor a { color: #2b6fff; }
+  .empty { color: #aaa; text-align: center; margin-top: 80px; font-size: 14px; }
+
+  /* 平板/手机：侧栏可收起 */
+  @media (max-width: 760px) {
+    .menu-btn { display: inline-block; }
+    .sidebar {
+      position: fixed; left: 0; top: 48px; bottom: 0; z-index: 20;
+      transform: translateX(-100%); transition: transform .2s; box-shadow: 2px 0 12px rgba(0,0,0,.15);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .toolbar input.doc-title { width: 140px; }
+  }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <button class="menu-btn" id="menuBtn">☰</button>
+    <span class="title">我的知识库</span>
+    <input class="search" id="searchBox" placeholder="🔍 搜索标题/内容">
+    <span class="spacer"></span>
+    <button id="saveFileBtn">保存为本地文件</button>
+    <button id="openFileBtn">打开本地文件</button>
+    <input type="file" id="openFile" accept=".html" style="display:none">
+  </div>
+
+  <div class="body">
+    <aside class="sidebar" id="sidebar">
+      <div class="side-head">
+        <button class="add-dir" id="addDirBtn">＋ 新增目录</button>
+      </div>
+      <div class="dir-list" id="dirList"></div>
+    </aside>
+
+    <main class="main">
+      <div class="toolbar">
+        <input class="doc-title" id="docTitle" placeholder="无标题笔记">
+        <span class="sep"></span>
+        <button title="加粗" onclick="fmt('bold')"><b>B</b></button>
+        <button title="斜体" onclick="fmt('italic')"><i>I</i></button>
+        <button title="下划线" onclick="fmt('underline')"><u>U</u></button>
+        <span class="sep"></span>
+        <button title="标题1" onclick="fmt('formatBlock','H1')">H1</button>
+        <button title="标题2" onclick="fmt('formatBlock','H2')">H2</button>
+        <button title="正文" onclick="fmt('formatBlock','P')">正文</button>
+        <span class="sep"></span>
+        <button title="项目符号" onclick="fmt('insertUnorderedList')">• 列表</button>
+        <button title="编号列表" onclick="fmt('insertOrderedList')">1. 列表</button>
+        <span class="sep"></span>
+        <button title="引用" onclick="fmt('formatBlock','BLOCKQUOTE')">❝ 引用</button>
+        <button title="插入链接" onclick="insertLink()">🔗 链接</button>
+        <button title="插入表格" onclick="insertTable()">▦ 表格</button>
+        <span class="save-state" id="saveState"></span>
+      </div>
+      <div class="editor-wrap">
+        <div class="editor" id="editor" contenteditable="true" spellcheck="false">
+          <p>从左侧「＋ 新增目录」开始，选中目录后「＋ 新增笔记」即可写作。</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+<script>
+const KEY = 'mini-kb-v1';
+let data = load();
+let activeDir = null, activeNote = null;
+const collapsed = {};  // 目录折叠状态：{ dirId: true }
+let searchTerm = '';   // 全局搜索关键词
+
+function load() {
+  // 优先读取导出文件内嵌的数据（让单文件真正可离线携带）
+  const el = document.getElementById('kb-data');
+  if (el) { try { return JSON.parse(el.textContent); } catch (e) {} }
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  // 初始示例
+  const d1 = uid(), n1 = uid();
+  return {
+    dirs: [{
+      id: d1, name: '示例',
+      notes: [{
+        id: n1, title: '欢迎使用',
+        html: '<h1>欢迎使用知识库</h1><p>这是一个像 Word 一样的轻量编辑器：</p><ul><li>左侧「＋ 新增目录」管理分类</li><li>顶部按钮可插入<b>表格</b>、<i>文字格式</i>、列表、链接</li><li>内容自动保存在本浏览器</li></ul><p>下面是一个表格示例：</p><table><thead><tr><th>功能</th><th>说明</th></tr></thead><tbody><tr><td>新增目录</td><td>左侧分类管理</td></tr><tr><td>插入表格</td><td>顶部「▦ 表格」</td></tr></tbody></table>',
+        updated: Date.now()
+      }]
+    }]
+  };
+}
+function save() {
+  localStorage.setItem(KEY, JSON.stringify(data));
+  const t = new Date();
+  document.getElementById('saveState').textContent = '已保存 ' + t.toLocaleTimeString('zh-CN');
+}
+function uid() { return 'k' + Math.random().toString(36).slice(2, 9); }
+
+function render() {
+  const list = document.getElementById('dirList');
+  list.innerHTML = '';
+  let shown = 0;
+  data.dirs.forEach(dir => {
+    const matchNotes = dir.notes.filter(n => {
+      if (!searchTerm) return true;
+      const text = (n.title || '') + ' ' + (n.html || '').replace(/<[^>]+>/g, ' ');
+      return text.toLowerCase().includes(searchTerm);
+    });
+    if (searchTerm && matchNotes.length === 0) return;
+    shown++;
+    const d = document.createElement('div');
+    d.className = 'dir' + (dir.id === activeDir ? ' active' : '');
+    const isCol = !!collapsed[dir.id];
+    d.innerHTML = `<span class="arrow" title="折叠/展开">${isCol ? '▸' : '▾'}</span><span class="name">📁 ${escapeHtml(dir.name)}</span><span class="del" title="删除目录">✕</span>`;
+    d.querySelector('.arrow').onclick = (e) => { e.stopPropagation(); collapsed[dir.id] = !collapsed[dir.id]; render(); };
+    d.querySelector('.name').onclick = () => { activeDir = dir.id; activeNote = dir.notes[0] ? dir.notes[0].id : null; collapsed[dir.id] = false; render(); };
+    d.querySelector('.del').onclick = (e) => { e.stopPropagation(); if (confirm('删除目录「' + dir.name + '」及其笔记？')) { data.dirs = data.dirs.filter(x => x.id !== dir.id); if (activeDir === dir.id) { activeDir = null; activeNote = null; } save(); render(); } };
+    list.appendChild(d);
+
+    const notes = document.createElement('div');
+    notes.className = 'notes';
+    const notesToShow = searchTerm ? matchNotes : dir.notes;
+    notesToShow.forEach(note => {
+      const n = document.createElement('div');
+      n.className = 'note' + (note.id === activeNote ? ' active' : '');
+      n.innerHTML = `<span>📄 ${escapeHtml(note.title || '无标题')}</span><span class="del" title="删除笔记">✕</span>`;
+      n.querySelector('span').onclick = () => {
+        activeDir = dir.id; activeNote = note.id;
+        if (searchTerm) { searchTerm = ''; document.getElementById('searchBox').value = ''; }
+        render();
+      };
+      n.querySelector('.del').onclick = (e) => { e.stopPropagation(); if (confirm('删除该笔记？')) { dir.notes = dir.notes.filter(x => x.id !== note.id); if (activeNote === note.id) activeNote = dir.notes[0] ? dir.notes[0].id : null; save(); render(); } };
+      notes.appendChild(n);
+    });
+    if (!searchTerm) {
+      const add = document.createElement('div');
+      add.className = 'add-note';
+      add.textContent = '＋ 新增笔记';
+      add.onclick = () => {
+        const note = { id: uid(), title: '未命名笔记', html: '<p><br></p>', updated: Date.now() };
+        dir.notes.push(note); activeDir = dir.id; activeNote = note.id; save(); render();
+      };
+      notes.appendChild(add);
+    }
+    if (!isCol || searchTerm) list.appendChild(notes);
+  });
+  if (searchTerm && shown === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'padding:20px 14px;color:#aaa;font-size:13px;';
+    empty.textContent = '没有匹配的笔记';
+    list.appendChild(empty);
+  }
+  renderEditor();
+}
+
+function renderEditor() {
+  const dir = data.dirs.find(x => x.id === activeDir);
+  const note = dir ? dir.notes.find(x => x.id === activeNote) : null;
+  const editor = document.getElementById('editor');
+  const titleEl = document.getElementById('docTitle');
+  if (!note) {
+    editor.innerHTML = '<p class="empty">请先在左侧选择或新增一个笔记 ✦</p>';
+    titleEl.value = ''; titleEl.disabled = true;
+    return;
+  }
+  titleEl.disabled = false;
+  titleEl.value = note.title || '';
+  editor.innerHTML = note.html || '<p><br></p>';
+}
+
+// 标题改动
+document.getElementById('docTitle').addEventListener('input', (e) => {
+  const note = currentNote(); if (!note) return;
+  note.title = e.target.value; note.updated = Date.now(); save();
+  // 同步左侧列表名
+  const dirEl = document.querySelectorAll('.dir');
+  render();
+});
+
+// 编辑器内容改动（防抖保存）
+let timer = null;
+document.getElementById('editor').addEventListener('input', () => {
+  const note = currentNote(); if (!note) return;
+  note.html = document.getElementById('editor').innerHTML;
+  note.updated = Date.now();
+  clearTimeout(timer);
+  document.getElementById('saveState').textContent = '编辑中…';
+  timer = setTimeout(save, 600);
+});
+
+function currentNote() {
+  const dir = data.dirs.find(x => x.id === activeDir);
+  return dir ? dir.notes.find(x => x.id === activeNote) : null;
+}
+
+// 顶部格式按钮
+function fmt(cmd, val) {
+  document.getElementById('editor').focus();
+  document.execCommand(cmd, false, val || null);
+  const note = currentNote(); if (note) { note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save(); }
+}
+function insertLink() {
+  const url = prompt('输入链接地址：', 'https://');
+  if (!url) return;
+  document.getElementById('editor').focus();
+  document.execCommand('createLink', false, url);
+  const note = currentNote(); if (note) { note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save(); }
+}
+function insertTable() {
+  const r = parseInt(prompt('行数（含表头）：', '3')) || 3;
+  const c = parseInt(prompt('列数：', '3')) || 3;
+  let html = '<table><thead>';
+  for (let j = 0; j < c; j++) html += '<th>表头</th>';
+  html += '</thead><tbody>';
+  for (let i = 1; i < r; i++) { html += '<tr>'; for (let j = 0; j < c; j++) html += '<td>内容</td>'; html += '</tr>'; }
+  html += '</tbody></table><p><br></p>';
+  document.getElementById('editor').focus();
+  document.execCommand('insertHTML', false, html);
+  const note = currentNote(); if (note) { note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save(); }
+}
+
+// 新增目录
+document.getElementById('addDirBtn').onclick = () => {
+  const name = prompt('目录名称：', '新目录');
+  if (!name) return;
+  const dir = { id: uid(), name, notes: [] };
+  data.dirs.push(dir); activeDir = dir.id; activeNote = null; save(); render();
+};
+
+// 保存为本地单文件 / 打开本地文件
+document.getElementById('saveFileBtn').onclick = () => {
+  let html = document.documentElement.outerHTML;
+  // 去掉旧的内嵌数据，避免重复
+  html = html.replace(/<script id="kb-data" type="application\/json">[\s\S]*?<\/script>/, '');
+  const payload = JSON.stringify(data).replace(/</g, '\\u003c');
+  const close = '</' + 'script>';
+  const tag = '<script id="kb-data" type="application/json">' + payload + close;
+  html = html.replace('<script>', tag + '\n<script>');
+  const blob = new Blob([html], { type: 'text/html' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = '我的知识库.html'; a.click();
+  document.getElementById('saveState').textContent = '已导出本地文件';
+};
+document.getElementById('openFileBtn').onclick = () => document.getElementById('openFile').click();
+document.getElementById('openFile').onchange = (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const m = reader.result.match(/<script id="kb-data" type="application\/json">([\s\S]*?)<\/script>/);
+    if (!m) { alert('不是有效的知识库文件'); return; }
+    try { data = JSON.parse(m[1]); save(); render(); alert('已打开本地知识库'); }
+    catch (err) { alert('解析失败'); }
+  };
+  reader.readAsText(f);
+  e.target.value = '';
+};
+
+// 移动端侧栏开关
+document.getElementById('menuBtn').onclick = () => document.getElementById('sidebar').classList.toggle('open');
+document.getElementById('searchBox').addEventListener('input', (e) => { searchTerm = e.target.value.trim().toLowerCase(); render(); });
+
+function escapeHtml(s) { return (s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+// 首次打开自动选中第一篇笔记，避免首屏空白
+if (data.dirs.length && !activeDir) {
+  activeDir = data.dirs[0].id;
+  activeNote = data.dirs[0].notes[0] ? data.dirs[0].notes[0].id : null;
+}
+
+render();
+</script>
+  <script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function (e) { console.log('SW 注册失败', e); });
+    });
+  }
+  </script>
+</body>
+</html>

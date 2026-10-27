@@ -161,6 +161,7 @@
     <span class="spacer"></span>
     <button id="saveFileBtn">保存为本地文件</button>
     <button id="openFileBtn">打开本地文件</button>
+    <button id="installBtn" style="display:none">安装到桌面</button>
     <input type="file" id="openFile" accept=".html" style="display:none">
   </div>
 
@@ -402,6 +403,23 @@ document.getElementById('addDirBtn').onclick = async () => {
   const dir = { id: uid(), name, notes: [] };
   data.dirs.push(dir); activeDir = dir.id; activeNote = null; save(); render();
 };
+
+// 安装到桌面（PWA）：浏览器可安装时显示按钮
+let deferredPrompt = null;
+const installBtn = document.getElementById('installBtn');
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  installBtn.style.display = '';
+});
+installBtn.addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  try { await deferredPrompt.userChoice; } catch (_) {}
+  deferredPrompt = null;
+  installBtn.style.display = 'none';
+});
+window.addEventListener('appinstalled', () => { installBtn.style.display = 'none'; });
 
 // 保存为本地单文件 / 打开本地文件
 document.getElementById('saveFileBtn').onclick = () => {

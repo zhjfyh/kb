@@ -108,6 +108,7 @@
   /* 字号下拉 */
   .toolbar select.font-size { border: 1px solid #e0e0e0; background: #fff; border-radius: 8px; padding: 9px 10px; font-size: 16px; cursor: pointer; min-width: 86px; }
   .toolbar select.font-size:focus { border-color: #bcd0ff; }
+  .toolbar .font-size-reset { padding: 9px 12px; min-width: 0; color: #2b6fff; }
   .editor blockquote { border-left: 4px solid #2b6fff; background: #f4f8ff; margin: 12px 0; padding: 8px 14px; color: #444; }
   .editor a { color: #2b6fff; }
   .empty { color: #aaa; text-align: center; margin-top: 80px; font-size: 14px; }
@@ -241,14 +242,10 @@
         <button title="插入表格" onclick="insertTable()">▦ 表格</button>
         <button title="表格设置（调宽/高/字号）" onclick="openTableDialog()">⚙ 表格</button>
         <span class="sep"></span>
-        <select class="font-size" id="fontSizeSel" title="文字大小">
+        <select class="font-size" id="fontSizeSel" title="文字大小（1-20，数字越大字越大）">
           <option value="">字号</option>
-          <option value="13">小</option>
-          <option value="15">标准</option>
-          <option value="18">大</option>
-          <option value="22">特大</option>
-          <option value="28">超大</option>
         </select>
+        <button class="font-size-reset" id="fontSizeReset" title="恢复默认字号">↺ 默认</button>
         <span class="sep"></span>
         <button class="color-btn" title="给文字换颜色" onclick="openColorMenu('fore', event)">🎨 文字色</button>
         <button class="color-btn" title="高亮底色（标记重点）" onclick="openColorMenu('back', event)">🖍 高亮</button>
@@ -652,19 +649,35 @@ document.getElementById('openFile').onchange = (e) => {
 document.getElementById('menuBtn').onclick = () => document.getElementById('sidebar').classList.toggle('open');
 document.getElementById('searchBox').addEventListener('input', (e) => { searchTerm = e.target.value.trim().toLowerCase(); render(); });
 
-// 字号下拉：先选中文字，再选字号即应用到选区
+// 字号：下拉改为数字 1-20，可直接改回默认
 const fontSizeSel = document.getElementById('fontSizeSel');
+for (let n = 1; n <= 20; n++) {
+  const o = document.createElement('option');
+  o.value = String(n); o.textContent = String(n);
+  fontSizeSel.appendChild(o);
+}
 fontSizeSel.addEventListener('pointerdown', saveSelection);
 fontSizeSel.addEventListener('change', () => {
-  const px = fontSizeSel.value;
-  if (!px) return;
+  const n = parseInt(fontSizeSel.value, 10);
+  if (!n || n < 1 || n > 20) { fontSizeSel.value = ''; return; }
   const note = currentNote();
   if (!note) { fontSizeSel.value = ''; return; }
+  const px = n + 10;  // 1→11px … 20→30px，数字越大字越大
   restoreSelection();
   document.execCommand('styleWithCSS', false, true);
   document.execCommand('fontSize', false, px + 'px');
   note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save();
   fontSizeSel.value = '';
+});
+// 恢复默认字号：去掉手动设置的字号（改不回来时的退路）
+document.getElementById('fontSizeReset').addEventListener('pointerdown', saveSelection);
+document.getElementById('fontSizeReset').addEventListener('click', () => {
+  const note = currentNote();
+  if (!note) return;
+  restoreSelection();
+  document.execCommand('styleWithCSS', false, true);
+  document.execCommand('fontSize', false, '15px');
+  note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save();
 });
 
 // ===== 文字颜色 / 高亮 =====

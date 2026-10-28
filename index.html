@@ -99,9 +99,15 @@
   .editor:focus { border-color: #bcd0ff; }
   .editor h1 { font-size: 24px; border-bottom: 2px solid #eee; padding-bottom: 8px; }
   .editor h2 { font-size: 20px; }
-  .editor table { border-collapse: collapse; width: 100%; margin: 12px 0; }
-  .editor th, .editor td { border: 1px solid #d0d0d0; padding: 7px 11px; text-align: left; }
+  .editor table { border-collapse: collapse; width: 100%; margin: 12px 0; table-layout: fixed; word-break: break-word; }
+  .editor th, .editor td { border: 1px solid #d0d0d0; padding: 7px 11px; text-align: left; position: relative; vertical-align: top; overflow: hidden; }
   .editor th { background: #f3f6ff; }
+  /* 列宽拖拽手柄 */
+  .col-resizer { position: absolute; right: -4px; top: 0; width: 10px; height: 100%; cursor: col-resize; user-select: none; touch-action: none; z-index: 5; }
+  .col-resizer:hover, .col-resizer:active { background: rgba(43,111,255,.25); }
+  /* 字号下拉 */
+  .toolbar select.font-size { border: 1px solid #e0e0e0; background: #fff; border-radius: 8px; padding: 9px 10px; font-size: 16px; cursor: pointer; min-width: 86px; }
+  .toolbar select.font-size:focus { border-color: #bcd0ff; }
   .editor blockquote { border-left: 4px solid #2b6fff; background: #f4f8ff; margin: 12px 0; padding: 8px 14px; color: #444; }
   .editor a { color: #2b6fff; }
   .empty { color: #aaa; text-align: center; margin-top: 80px; font-size: 14px; }
@@ -147,6 +153,23 @@
   }
   .modal-actions .m-cancel { background: #eef0f3; color: #445; }
   .modal-actions .m-ok { background: #2b6fff; color: #fff; }
+
+  /* 表格设置弹窗 */
+  .dialog-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none;
+    align-items: center; justify-content: center; z-index: 9999;
+  }
+  .dialog-box {
+    width: 340px; max-width: 88vw; background: #fff; border-radius: 14px;
+    padding: 20px; box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  }
+  .dialog-box .modal-title { font-size: 17px; font-weight: 700; color: #1f2b3a; margin-bottom: 14px; }
+  .dialog-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .dialog-row label { font-size: 15px; color: #445; width: 92px; flex: 0 0 92px; }
+  .dialog-row input, .dialog-row select {
+    flex: 1; padding: 10px 12px; border: 1px solid #d6dae0; border-radius: 8px; font-size: 16px; outline: none; box-sizing: border-box;
+  }
+  .dialog-row input:focus, .dialog-row select:focus { border-color: #2b6fff; }
 </style>
 </head>
 <body>
@@ -199,6 +222,16 @@
         <button title="引用" onclick="fmt('formatBlock','BLOCKQUOTE')">❝ 引用</button>
         <button title="插入链接" onclick="insertLink()">🔗 链接</button>
         <button title="插入表格" onclick="insertTable()">▦ 表格</button>
+        <button title="表格设置（调宽/高/字号）" onclick="openTableDialog()">⚙ 表格</button>
+        <span class="sep"></span>
+        <select class="font-size" id="fontSizeSel" title="文字大小">
+          <option value="">字号</option>
+          <option value="13">小</option>
+          <option value="15">标准</option>
+          <option value="18">大</option>
+          <option value="22">特大</option>
+          <option value="28">超大</option>
+        </select>
         <span class="save-state" id="saveState"></span>
       </div>
       <div class="editor-wrap">
@@ -210,6 +243,16 @@
   </div>
 
   <div id="updateBanner">发现新版本，<a id="updateNow">点击更新</a></div>
+
+  <div class="dialog-mask" id="tableDialog">
+    <div class="dialog-box">
+      <div class="modal-title">表格设置</div>
+      <div class="dialog-row"><label>宽度</label><input id="tbWidth" type="number" min="10" value="100" style="flex:2"><select id="tbWidthUnit" style="flex:1;margin-left:8px"><option value="%">%（占满）</option><option value="px">像素px</option></select></div>
+      <div class="dialog-row"><label>行高(px)</label><input id="tbRowH" type="number" min="20" value="40"></div>
+      <div class="dialog-row"><label>字号(px)</label><input id="tbFont" type="number" min="10" value="15"></div>
+      <div class="modal-actions"><button class="m-cancel" id="tbCancel">取消</button><button class="m-ok" id="tbOk">确定</button></div>
+    </div>
+  </div>
 <script>
 const KEY = 'mini-kb-v1';
 let data = load();
@@ -328,6 +371,7 @@ function renderEditor() {
   titleEl.disabled = false;
   titleEl.value = note.title || '';
   editor.innerHTML = note.html || '<p><br></p>';
+  enableColResize();
 }
 
 // 标题改动（局部更新左侧标题，避免每敲一个字就整页重建导致卡顿）
@@ -436,7 +480,85 @@ async function insertTable() {
   restoreSelection();
   document.execCommand('insertHTML', false, html);
   const note = currentNote(); if (note) { note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save(); }
+  enableColResize();
 }
+
+// 列宽拖拽：给每个表头右侧加可拖拽手柄，拖动实时调整该列宽度（鼠标/触摸通用）
+function enableColResize() {
+  const editor = document.getElementById('editor');
+  editor.querySelectorAll('table').forEach(table => {
+    const headerCells = table.querySelectorAll('tr:first-child > *');
+    headerCells.forEach(th => {
+      if (th.querySelector('.col-resizer')) return;
+      const handle = document.createElement('span');
+      handle.className = 'col-resizer';
+      handle.setAttribute('contenteditable', 'false');
+      th.appendChild(handle);
+      const start = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const startX = clientX;
+        const startW = th.getBoundingClientRect().width;
+        const colIndex = Array.prototype.indexOf.call(th.parentNode.children, th);
+        const cells = [];
+        table.querySelectorAll('tr').forEach(tr => { const cell = tr.children[colIndex]; if (cell) cells.push(cell); });
+        const move = (ev) => {
+          ev.preventDefault();
+          const x = ev.touches ? ev.touches[0].clientX : ev.clientX;
+          const newW = Math.max(30, startW + (x - startX));
+          cells.forEach(c => { c.style.width = newW + 'px'; });
+        };
+        const end = () => {
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', end);
+          document.removeEventListener('touchmove', move);
+          document.removeEventListener('touchend', end);
+          const note = currentNote(); if (note) { note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save(); }
+        };
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', end);
+        document.addEventListener('touchmove', move, { passive: false });
+        document.addEventListener('touchend', end);
+      };
+      handle.addEventListener('mousedown', start);
+      handle.addEventListener('touchstart', start, { passive: false });
+    });
+  });
+}
+
+// 表格设置弹窗：调宽度 / 行高 / 字号
+let pendingTable = null;
+function openTableDialog() {
+  const editor = document.getElementById('editor');
+  const sel = window.getSelection();
+  let node = sel && sel.anchorNode ? sel.anchorNode : null;
+  let table = editor.querySelector('table');
+  while (node && node !== editor) { if (node.tagName === 'TABLE') { table = node; break; } node = node.parentNode; }
+  if (!table) { alert('请先把光标放到表格里，再点「⚙ 表格」'); return; }
+  pendingTable = table;
+  const w = table.style.width || '100%';
+  const unit = w.endsWith('%') ? '%' : (w.endsWith('px') ? 'px' : '%');
+  document.getElementById('tbWidth').value = parseFloat(w) || 100;
+  document.getElementById('tbWidthUnit').value = unit;
+  const firstCell = table.querySelector('td, th');
+  const curRh = firstCell && firstCell.style.height ? parseInt(firstCell.style.height) : 40;
+  document.getElementById('tbRowH').value = curRh;
+  document.getElementById('tbFont').value = table.style.fontSize ? parseInt(table.style.fontSize) : 15;
+  document.getElementById('tableDialog').style.display = 'flex';
+}
+document.getElementById('tbOk').onclick = () => {
+  if (!pendingTable) return;
+  const w = document.getElementById('tbWidth').value || 100;
+  const unit = document.getElementById('tbWidthUnit').value;
+  const rh = document.getElementById('tbRowH').value || 40;
+  const fs = document.getElementById('tbFont').value || 15;
+  pendingTable.style.width = w + unit;
+  pendingTable.querySelectorAll('td, th').forEach(c => { c.style.height = rh + 'px'; });
+  pendingTable.style.fontSize = fs + 'px';
+  document.getElementById('tableDialog').style.display = 'none';
+  const note = currentNote(); if (note) { note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save(); }
+};
+document.getElementById('tbCancel').onclick = () => { document.getElementById('tableDialog').style.display = 'none'; };
 
 // 新增目录
 document.getElementById('addDirBtn').onclick = async () => {
@@ -501,6 +623,21 @@ document.getElementById('openFile').onchange = (e) => {
 // 移动端侧栏开关
 document.getElementById('menuBtn').onclick = () => document.getElementById('sidebar').classList.toggle('open');
 document.getElementById('searchBox').addEventListener('input', (e) => { searchTerm = e.target.value.trim().toLowerCase(); render(); });
+
+// 字号下拉：先选中文字，再选字号即应用到选区
+const fontSizeSel = document.getElementById('fontSizeSel');
+fontSizeSel.addEventListener('pointerdown', saveSelection);
+fontSizeSel.addEventListener('change', () => {
+  const px = fontSizeSel.value;
+  if (!px) return;
+  const note = currentNote();
+  if (!note) { fontSizeSel.value = ''; return; }
+  restoreSelection();
+  document.execCommand('styleWithCSS', false, true);
+  document.execCommand('fontSize', false, px + 'px');
+  note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save();
+  fontSizeSel.value = '';
+});
 
 function escapeHtml(s) { return (s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 

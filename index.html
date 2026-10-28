@@ -245,7 +245,8 @@ function save() {
 }
 function uid() { return 'k' + Math.random().toString(36).slice(2, 9); }
 
-function render() {
+// 全量重建左侧目录（仅在目录增删/搜索/折叠/改名时用）
+function renderSidebar() {
   const list = document.getElementById('dirList');
   list.innerHTML = '';
   let shown = 0;
@@ -259,6 +260,7 @@ function render() {
     shown++;
     const d = document.createElement('div');
     d.className = 'dir' + (dir.id === activeDir ? ' active' : '');
+    d.dataset.dirId = dir.id;
     const isCol = !!collapsed[dir.id];
     d.innerHTML = `<span class="arrow" title="折叠/展开">${isCol ? '▸' : '▾'}</span><span class="name">📁 ${escapeHtml(dir.name)}</span><span class="del" title="删除目录">✕</span>`;
     d.querySelector('.arrow').onclick = (e) => { e.stopPropagation(); collapsed[dir.id] = !collapsed[dir.id]; render(); };
@@ -272,11 +274,12 @@ function render() {
     notesToShow.forEach(note => {
       const n = document.createElement('div');
       n.className = 'note' + (note.id === activeNote ? ' active' : '');
-      n.innerHTML = `<span>📄 ${escapeHtml(note.title || '无标题')}</span><span class="del" title="删除笔记">✕</span>`;
-      n.querySelector('span').onclick = () => {
-        activeDir = dir.id; activeNote = note.id;
-        if (searchTerm) { searchTerm = ''; document.getElementById('searchBox').value = ''; }
-        render();
+      n.dataset.noteId = note.id;
+      n.innerHTML = `<span class="note-title">📄 ${escapeHtml(note.title || '无标题')}</span><span class="del" title="删除笔记">✕</span>`;
+      n.querySelector('.note-title').onclick = () => {
+        // 搜索状态下点击需清空搜索并全量重建；否则走轻量切换，避免卡顿
+        if (searchTerm) { searchTerm = ''; document.getElementById('searchBox').value = ''; render(); }
+        else selectNote(note.id, dir.id);
       };
       n.querySelector('.del').onclick = async (e) => { e.stopPropagation(); if (await askConfirm('删除该笔记？')) { dir.notes = dir.notes.filter(x => x.id !== note.id); if (activeNote === note.id) activeNote = dir.notes[0] ? dir.notes[0].id : null; save(); render(); } };
       notes.appendChild(n);
@@ -299,6 +302,16 @@ function render() {
     empty.textContent = '没有匹配的笔记';
     list.appendChild(empty);
   }
+}
+
+function render() { renderSidebar(); renderEditor(); }
+
+// 轻量切换笔记：仅更新高亮 class + 重设编辑区，不重建整个侧栏（解决切换卡顿）
+function selectNote(noteId, dirId) {
+  activeDir = dirId;
+  activeNote = noteId;
+  document.querySelectorAll('.dir').forEach(el => el.classList.toggle('active', el.dataset.dirId === dirId));
+  document.querySelectorAll('.note').forEach(el => el.classList.toggle('active', el.dataset.noteId === noteId));
   renderEditor();
 }
 
@@ -317,13 +330,12 @@ function renderEditor() {
   editor.innerHTML = note.html || '<p><br></p>';
 }
 
-// 标题改动
+// 标题改动（局部更新左侧标题，避免每敲一个字就整页重建导致卡顿）
 document.getElementById('docTitle').addEventListener('input', (e) => {
   const note = currentNote(); if (!note) return;
   note.title = e.target.value; note.updated = Date.now(); save();
-  // 同步左侧列表名
-  const dirEl = document.querySelectorAll('.dir');
-  render();
+  const el = document.querySelector('.note[data-note-id="' + note.id + '"] .note-title');
+  if (el) el.innerHTML = '📄 ' + escapeHtml(note.title || '无标题');
 });
 
 // 编辑器内容改动（防抖保存）

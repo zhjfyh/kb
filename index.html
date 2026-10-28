@@ -374,14 +374,35 @@ function fmt(cmd, val) {
   document.execCommand(cmd, false, val || null);
   const note = currentNote(); if (note) { note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save(); }
 }
+// 保存/恢复光标位置：弹自定义窗会让编辑器失焦，需手动还原，否则表格总插到最上方
+let savedRange = null;
+function saveSelection() {
+  const sel = window.getSelection();
+  const editor = document.getElementById('editor');
+  if (sel && sel.rangeCount > 0) {
+    const range = sel.getRangeAt(0);
+    if (editor.contains(range.commonAncestorContainer)) savedRange = range.cloneRange();
+  }
+}
+function restoreSelection() {
+  const editor = document.getElementById('editor');
+  editor.focus();
+  if (savedRange) {
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(savedRange);
+  }
+}
 async function insertLink() {
+  saveSelection();
   const url = await askText('输入链接地址', 'https://');
   if (!url) return;
-  document.getElementById('editor').focus();
+  restoreSelection();
   document.execCommand('createLink', false, url);
   const note = currentNote(); if (note) { note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save(); }
 }
 async function insertTable() {
+  saveSelection();
   const rs = await askText('行数（含表头）', '3'); if (rs === null) return;
   const r = parseInt(rs) || 3;
   const cs = await askText('列数', '3'); if (cs === null) return;
@@ -391,7 +412,7 @@ async function insertTable() {
   html += '</thead><tbody>';
   for (let i = 1; i < r; i++) { html += '<tr>'; for (let j = 0; j < c; j++) html += '<td>内容</td>'; html += '</tr>'; }
   html += '</tbody></table><p><br></p>';
-  document.getElementById('editor').focus();
+  restoreSelection();
   document.execCommand('insertHTML', false, html);
   const note = currentNote(); if (note) { note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save(); }
 }

@@ -281,8 +281,9 @@
 <script>
 const KEY = 'mini-kb-v1';
 let data = load();
+// 目录默认折叠（已有目录首次加载即折叠；新建目录保持展开以便立即添加笔记）
+data.dirs.forEach(d => { if (d.collapsed === undefined) d.collapsed = true; });
 let activeDir = null, activeNote = null;
-const collapsed = {};  // 目录折叠状态：{ dirId: true }
 let searchTerm = '';   // 全局搜索关键词
 
 function load() {
@@ -329,10 +330,10 @@ function renderSidebar() {
     const d = document.createElement('div');
     d.className = 'dir' + (dir.id === activeDir ? ' active' : '');
     d.dataset.dirId = dir.id;
-    const isCol = !!collapsed[dir.id];
+    const isCol = !!dir.collapsed;
     d.innerHTML = `<span class="arrow" title="折叠/展开">${isCol ? '▸' : '▾'}</span><span class="name">📁 ${escapeHtml(dir.name)}</span><span class="del" title="删除目录">✕</span>`;
-    d.querySelector('.arrow').onclick = (e) => { e.stopPropagation(); collapsed[dir.id] = !collapsed[dir.id]; render(); };
-    d.querySelector('.name').onclick = () => { activeDir = dir.id; activeNote = dir.notes[0] ? dir.notes[0].id : null; collapsed[dir.id] = false; render(); };
+    d.querySelector('.arrow').onclick = (e) => { e.stopPropagation(); dir.collapsed = !dir.collapsed; save(); render(); };
+    d.querySelector('.name').onclick = () => { activeDir = dir.id; activeNote = dir.notes[0] ? dir.notes[0].id : null; dir.collapsed = false; save(); render(); };
     d.querySelector('.del').onclick = async (e) => { e.stopPropagation(); if (await askConfirm('删除目录「' + dir.name + '」及其笔记？')) { data.dirs = data.dirs.filter(x => x.id !== dir.id); if (activeDir === dir.id) { activeDir = null; activeNote = null; } save(); render(); } };
     list.appendChild(d);
 
@@ -589,7 +590,7 @@ document.getElementById('tbCancel').onclick = () => { document.getElementById('t
 document.getElementById('addDirBtn').onclick = async () => {
   const name = await askText('目录名称', '新目录');
   if (!name) return;
-  const dir = { id: uid(), name, notes: [] };
+  const dir = { id: uid(), name, notes: [], collapsed: false };
   data.dirs.push(dir); activeDir = dir.id; activeNote = null; save(); render();
 };
 
@@ -649,7 +650,7 @@ document.getElementById('openFile').onchange = (e) => {
 document.getElementById('menuBtn').onclick = () => document.getElementById('sidebar').classList.toggle('open');
 document.getElementById('searchBox').addEventListener('input', (e) => { searchTerm = e.target.value.trim().toLowerCase(); render(); });
 
-// 字号：下拉改为数字 1-20，可直接改回默认
+// 字号：下拉改为数字 1-20，可反复设置；「↺ 默认」复位
 const fontSizeSel = document.getElementById('fontSizeSel');
 for (let n = 1; n <= 20; n++) {
   const o = document.createElement('option');
@@ -659,26 +660,72 @@ for (let n = 1; n <= 20; n++) {
 fontSizeSel.addEventListener('pointerdown', saveSelection);
 fontSizeSel.addEventListener('change', () => {
   const n = parseInt(fontSizeSel.value, 10);
-  if (!n || n < 1 || n > 20) { fontSizeSel.value = ''; return; }
-  const note = currentNote();
-  if (!note) { fontSizeSel.value = ''; return; }
-  const px = n + 10;  // 1→11px … 20→30px，数字越大字越大
-  restoreSelection();
-  document.execCommand('styleWithCSS', false, true);
-  document.execCommand('fontSize', false, px + 'px');
-  note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save();
   fontSizeSel.value = '';
+  const note = currentNote();
+  if (!n || n < 1 || n > 20 || !note) return;
+  restoreSelection();
+  applyFontSize(n + 10);  // 1→11px … 20→30px，数字越大字越大
 });
-// 恢复默认字号：去掉手动设置的字号（改不回来时的退路）
 document.getElementById('fontSizeReset').addEventListener('pointerdown', saveSelection);
 document.getElementById('fontSizeReset').addEventListener('click', () => {
-  const note = currentNote();
-  if (!note) return;
+  if (!currentNote()) return;
   restoreSelection();
-  document.execCommand('styleWithCSS', false, true);
-  document.execCommand('fontSize', false, '15px');
-  note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save();
+  resetFontSize();
 });
+
+// 给选区（或光标处）套一个指定字号的 span；可重复调用，后设覆盖先设
+function applyFontSize(px) {
+  const editor = document.getElementById('editor');
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  if (!editor.contains(range.commonAncestorContainer)) return;
+  if (range.collapsed) {
+    // 光标处：插入带字号的 span，后续输入即生效
+    const span = document.createElement('span');
+    span.style.fontSize = px + 'px';
+    span.textContent = '​';
+    range.insertNode(span);
+    const r = document.createRange();
+    r.setStart(span.firstChild, 1); r.collapse(true);
+    sel.removeAllRanges(); sel.addRange(r);
+  } else {
+    const span = document.createElement('span');
+    span.style.fontSize = px + 'px';
+    try {
+      span.appendChild(range.extractContents());
+      range.insertNode(span);
+      const r = document.createRange();
+      r.selectNodeContents(span);
+      sel.removeAllRanges(); sel.addRange(r);
+    } catch (e) {
+      // 跨复杂块级元素等无法提取的选区，退回原生命令
+      document.execCommand('styleWithCSS', false, true);
+      document.execCommand('fontSize', false, px + 'px');
+    }
+  }
+  const note = currentNote(); if (note) { note.html = editor.innerHTML; note.updated = Date.now(); save(); }
+}
+// 去掉选区内手动设置的字号（恢复默认大小）
+function resetFontSize() {
+  const editor = document.getElementById('editor');
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  if (!editor.contains(range.commonAncestorContainer)) return;
+  const targets = [];
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_ELEMENT, {
+    acceptNode(node) {
+      return (range.intersectsNode(node) && node.style && node.style.fontSize) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+    }
+  });
+  while (walker.nextNode()) targets.push(walker.currentNode);
+  targets.forEach(el => {
+    el.style.fontSize = '';
+    if (el.getAttribute('style') === '') el.removeAttribute('style');
+  });
+  const note = currentNote(); if (note) { note.html = editor.innerHTML; note.updated = Date.now(); save(); }
+}
 
 // ===== 文字颜色 / 高亮 =====
 let colorMode = 'fore';  // 'fore' = 文字颜色，'back' = 高亮底色

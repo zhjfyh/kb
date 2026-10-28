@@ -106,6 +106,14 @@
   .editor a { color: #2b6fff; }
   .empty { color: #aaa; text-align: center; margin-top: 80px; font-size: 14px; }
 
+  /* 新版本提示条 */
+  #updateBanner {
+    position: fixed; left: 50%; top: 12px; transform: translateX(-50%); z-index: 1000;
+    display: none; align-items: center; gap: 8px; background: #1f5be0; color: #fff;
+    padding: 10px 18px; border-radius: 10px; font-size: 15px; box-shadow: 0 4px 14px rgba(0,0,0,.25);
+  }
+  #updateBanner a { color: #fff; font-weight: 700; text-decoration: underline; cursor: pointer; }
+
   /* 平板/手机：侧栏可收起 */
   @media (max-width: 760px) {
     .menu-btn { display: inline-block; }
@@ -201,6 +209,7 @@
     </main>
   </div>
 
+  <div id="updateBanner">发现新版本，<a id="updateNow">点击更新</a></div>
 <script>
 const KEY = 'mini-kb-v1';
 let data = load();
@@ -442,6 +451,13 @@ installBtn.addEventListener('click', async () => {
 });
 window.addEventListener('appinstalled', () => { installBtn.style.display = 'none'; });
 
+// 新版本提示：Service Worker 更新就绪后显示「点击更新」
+function showUpdateBanner() {
+  const b = document.getElementById('updateBanner');
+  if (b) b.style.display = 'flex';
+}
+document.getElementById('updateNow').onclick = () => location.reload();
+
 // 保存为本地单文件 / 打开本地文件
 document.getElementById('saveFileBtn').onclick = () => {
   let html = document.documentElement.outerHTML;
@@ -486,6 +502,10 @@ render();
 </script>
   <script>
   if ('serviceWorker' in navigator) {
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (refreshing) return; refreshing = true; showUpdateBanner();
+    });
     window.addEventListener('load', function () {
       navigator.serviceWorker.register('sw.js').catch(function (e) { console.log('SW 注册失败', e); });
     });

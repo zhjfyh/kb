@@ -170,6 +170,23 @@
     flex: 1; padding: 10px 12px; border: 1px solid #d6dae0; border-radius: 8px; font-size: 16px; outline: none; box-sizing: border-box;
   }
   .dialog-row input:focus, .dialog-row select:focus { border-color: #2b6fff; }
+
+  /* 文字颜色 / 高亮面板 */
+  .color-menu {
+    position: fixed; display: none; z-index: 9999; background: #fff; border: 1px solid #e0e0e0;
+    border-radius: 12px; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); width: 228px;
+  }
+  .color-menu .cm-head { font-size: 13px; color: #888; margin-bottom: 10px; }
+  .color-menu .swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .color-menu .sw {
+    width: 100%; aspect-ratio: 1/1; border-radius: 8px; cursor: pointer;
+    border: 1px solid rgba(0,0,0,.12); transition: transform .08s;
+  }
+  .color-menu .sw:hover { transform: scale(1.1); }
+  .color-menu .cm-custom { margin-top: 12px; display: flex; align-items: center; gap: 8px; font-size: 14px; color: #555; }
+  .color-menu .cm-custom input[type=color] { width: 38px; height: 32px; border: 1px solid #ddd; border-radius: 6px; background: none; cursor: pointer; padding: 2px; }
+  .color-menu .cm-clear { margin-top: 10px; font-size: 14px; color: #2b6fff; cursor: pointer; text-align: center; padding: 6px; border-radius: 8px; background: #f0f4ff; }
+  .color-menu .cm-clear:hover { background: #e6efff; }
 </style>
 </head>
 <body>
@@ -232,6 +249,9 @@
           <option value="22">特大</option>
           <option value="28">超大</option>
         </select>
+        <span class="sep"></span>
+        <button class="color-btn" title="给文字换颜色" onclick="openColorMenu('fore', event)">🎨 文字色</button>
+        <button class="color-btn" title="高亮底色（标记重点）" onclick="openColorMenu('back', event)">🖍 高亮</button>
         <span class="save-state" id="saveState"></span>
       </div>
       <div class="editor-wrap">
@@ -252,6 +272,14 @@
       <div class="dialog-row"><label>字号(px)</label><input id="tbFont" type="number" min="10" value="15"></div>
       <div class="modal-actions"><button class="m-cancel" id="tbCancel">取消</button><button class="m-ok" id="tbOk">确定</button></div>
     </div>
+  </div>
+
+  <!-- 文字颜色 / 高亮面板 -->
+  <div id="colorMenu" class="color-menu">
+    <div class="cm-head" id="cmHead">选择文字颜色</div>
+    <div class="swatches" id="cmSwatches"></div>
+    <div class="cm-custom">自定义颜色 <input type="color" id="cmCustom" value="#e02020"></div>
+    <div class="cm-clear" id="cmClear">清除颜色</div>
   </div>
 <script>
 const KEY = 'mini-kb-v1';
@@ -637,6 +665,67 @@ fontSizeSel.addEventListener('change', () => {
   document.execCommand('fontSize', false, px + 'px');
   note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save();
   fontSizeSel.value = '';
+});
+
+// ===== 文字颜色 / 高亮 =====
+let colorMode = 'fore';  // 'fore' = 文字颜色，'back' = 高亮底色
+const TEXT_COLORS = [['红','#e02020'],['橙','#ff8800'],['黄','#d99400'],['绿','#1a9e3b'],['青','#0aa1a8'],['蓝','#2b6fff'],['紫','#8a3ffc'],['灰','#888'],['黑','#222']];
+const HL_COLORS   = [['黄','#fff3a3'],['绿','#c8f7c5'],['蓝','#cfe3ff'],['粉','#ffd7e6'],['橙','#ffe0b3'],['紫','#e9d7ff'],['灰','#ececec'],['无','transparent']];
+
+// 按下按钮前先保存光标（否则点按钮后编辑器失焦，选区丢失）
+document.querySelectorAll('.color-btn').forEach(b => b.addEventListener('pointerdown', saveSelection));
+
+function openColorMenu(mode, ev) {
+  colorMode = mode;
+  saveSelection();
+  const menu = document.getElementById('colorMenu');
+  const pal = colorMode === 'fore' ? TEXT_COLORS : HL_COLORS;
+  document.getElementById('cmHead').textContent = colorMode === 'fore' ? '选择文字颜色' : '选择高亮底色';
+  const grid = document.getElementById('cmSwatches');
+  grid.innerHTML = '';
+  pal.forEach(([name, color]) => {
+    const sw = document.createElement('div');
+    sw.className = 'sw';
+    sw.title = name;
+    if (color === 'transparent') {
+      sw.style.background = '#fff';
+      sw.style.backgroundImage = 'linear-gradient(45deg,#ddd 25%,transparent 25%,transparent 75%,#ddd 75%),linear-gradient(45deg,#ddd 25%,#fff 25%,#fff 75%,#ddd 75%)';
+      sw.style.backgroundSize = '12px 12px';
+      sw.style.backgroundPosition = '0 0,6px 6px';
+    } else {
+      sw.style.background = color;
+    }
+    sw.onclick = () => applyColor(color === 'transparent' ? 'transparent' : color);
+    grid.appendChild(sw);
+  });
+  const btn = ev.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  menu.style.display = 'block';
+  menu.style.left = Math.min(rect.left, window.innerWidth - 244) + 'px';
+  menu.style.top = (rect.bottom + 6) + 'px';
+}
+function applyColor(color) {
+  restoreSelection();
+  document.execCommand('styleWithCSS', false, true);
+  const cmd = colorMode === 'fore' ? 'foreColor' : 'hiliteColor';
+  document.execCommand(cmd, false, color);
+  const note = currentNote(); if (note) { note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save(); }
+  document.getElementById('colorMenu').style.display = 'none';
+}
+document.getElementById('cmClear').onclick = () => {
+  restoreSelection();
+  if (colorMode === 'fore') document.execCommand('foreColor', false, '#222');
+  else { document.execCommand('styleWithCSS', false, true); document.execCommand('hiliteColor', false, 'transparent'); }
+  const note = currentNote(); if (note) { note.html = document.getElementById('editor').innerHTML; note.updated = Date.now(); save(); }
+  document.getElementById('colorMenu').style.display = 'none';
+};
+document.getElementById('cmCustom').addEventListener('input', (e) => applyColor(e.target.value));
+// 点击面板外区域自动收起
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('colorMenu');
+  if (menu.style.display === 'block' && !menu.contains(e.target) && !e.target.closest('.color-btn')) {
+    menu.style.display = 'none';
+  }
 });
 
 function escapeHtml(s) { return (s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
